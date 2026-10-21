@@ -1,0 +1,6 @@
+project_id = "auto-partners"
+
+# The function validates the user token via Auth.getUser AND ap_session itself.
+# The legacy gateway JWT check does not support publishable keys/new signing keys.
+[functions.account-admin]
+verify_jwt = false
