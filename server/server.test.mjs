@@ -12,7 +12,7 @@ test('two accounts share cars and chat; authorization and optimistic concurrency
   assert.equal((await call('/api/users',{cookie:owner.cookie,body:{email:'third@example.com',name:'Third',password:partnerPass}})).status,400);
   const partner=await call('/api/login',{body:{email:'partner@example.com',password:partnerPass}});assert.equal(partner.status,200);
   assert.equal((await call('/api/users',{cookie:partner.cookie})).status,403);
-  const car={make:'Opel',model:'Astra',year:2012,engine:'1.6',gearbox:'Механіка',color:'Сірий',purchase:2000,expenses:400,minimum:2700,target:3000,actual:null,boughtAt:'2026-10-17',sellBy:'2026-12-15',status:'bought',notes:'Перевірити стан',url:''};
+  const car={photos:['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'],make:'Opel',model:'Astra',year:2012,engine:'1.6',gearbox:'Механіка',color:'Сірий',purchase:2000,expenses:400,minimum:2700,target:3000,actual:null,boughtAt:'2026-10-17',sellBy:'2026-12-15',status:'bought',notes:'Перевірити стан',url:''};
   assert.equal((await call('/api/cars',{cookie:owner.cookie,body:{car},origin:'https://evil.example'})).status,403);
   assert.equal((await call('/api/cars',{cookie:owner.cookie,body:{car:{...car,target:1000}}})).status,400);
   const created=await call('/api/cars',{cookie:owner.cookie,body:{car}});assert.equal(created.status,200);const id=created.p.car.id;
@@ -27,7 +27,7 @@ test('two accounts share cars and chat; authorization and optimistic concurrency
   assert.equal((await call('/api/logout',{cookie:partner.cookie,body:{}})).status,200);assert.equal((await call('/api/workspace',{cookie:partner.cookie})).status,401);
   await app.close();
   app=await createApp({databasePath,secure:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));url=`http://127.0.0.1:${app.server.address().port}`;
-  const persisted=await call('/api/workspace',{cookie:owner.cookie});assert.equal(persisted.status,200);assert.equal(persisted.p.cars.length,1);assert.equal(persisted.p.messages.length,2);
+  const persisted=await call('/api/workspace',{cookie:owner.cookie});assert.equal(persisted.status,200);assert.equal(persisted.p.cars.length,1);assert.deepEqual(persisted.p.cars[0].photos,car.photos);assert.equal(persisted.p.messages.length,2);
   const partnerUser=(await call('/api/users',{cookie:owner.cookie})).p.users.find(u=>u.role==='partner');
   const relog=await call('/api/login',{body:{email:'partner@example.com',password:partnerPass}});assert.equal(relog.status,200);
   assert.equal((await call('/api/users/password',{cookie:owner.cookie,body:{id:partnerUser.id,password:randomBytes(20).toString('hex')}})).status,200);

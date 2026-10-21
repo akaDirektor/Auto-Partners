@@ -5,6 +5,7 @@ const date=z.string().refine(s=>s===''||(/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.
 export const carInput=z.object({make:z.string().trim().min(1,'Вкажи марку').max(80),model:z.string().trim().min(1,'Вкажи модель').max(120),
  year:z.number().int().min(1900).max(2027).nullable(),engine:z.string().max(40),gearbox:z.string().max(40),color:z.string().max(50),
  purchase:amount,expenses:amount,minimum:amount,target:amount,actual:amount.nullable(),boughtAt:date,sellBy:date,status:z.enum(['planned','bought','preparing','selling','sold']),notes:z.string().max(5000),
+ photos:z.array(z.string().max(160000).regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/,'Некоректний формат фото')).max(6,'Максимум 6 фотографій').optional(),
  url:z.string().max(2000).refine(s=>s===''||/^https?:\/\//i.test(s),'Посилання має починатися з https://'),
 }).refine(c=>c.target>=c.minimum,{message:'Цільова ціна має бути не нижчою за мінімальну',path:['target']})
  .refine(c=>c.status!=='sold'||c.actual!==null,{message:'Вкажи фактичну ціну продажу',path:['actual']});
