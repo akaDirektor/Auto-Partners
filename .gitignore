@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+.env
+*.db
+*.sqlite*
+.env.*
+!.env.example
+*.pem
+*.key
+work/
+.DS_Store
