@@ -1,0 +1,8 @@
+// Import an authorized export from the earlier app. Run only against a backed-up database.
+import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';import {resolve} from 'node:path';
+const file=process.argv[2];if(!file)throw Error('Usage: node scripts/import-data.mjs export.json');
+const data=JSON.parse(readFileSync(resolve(file),'utf8'));if(!Array.isArray(data.cars)||!Array.isArray(data.messages))throw Error('Expected cars and messages arrays');
+const db=new DatabaseSync(process.env.DATABASE_PATH||'data/app.sqlite');const owner=db.prepare("SELECT id FROM users WHERE role='owner'").get();if(!owner)throw Error('Start the app once to create the owner account');
+const {carInput}=await import('../src/model.ts');
+db.exec('BEGIN IMMEDIATE');try{for(const car of data.cars){const input=carInput.parse(car);db.prepare('INSERT INTO cars(id,version,payload,created_at,updated_at,updated_by,created_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(car.id,car.version||1,JSON.stringify(input),car.createdAt,car.updatedAt,car.updatedBy||'Імпорт',owner.id);}
+for(const m of data.messages){if(m.carId&&!db.prepare('SELECT id FROM cars WHERE id=?').get(m.carId))throw Error('Missing referenced car');if(typeof m.body!=='string'||typeof m.authorName!=='string')throw Error('Invalid message');db.prepare('INSERT INTO messages VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(m.id,m.carId||null,m.body,owner.id,m.authorName,m.createdAt);}db.exec('COMMIT');console.log(`Imported ${data.cars.length} cars and ${data.messages.length} messages. Original author names preserved.`);}catch(e){db.exec('ROLLBACK');throw e}finally{db.close()}

@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file: .env
+    volumes:
+      - auto_partners:/data
+    restart: unless-stopped
+volumes:
+  auto_partners:
