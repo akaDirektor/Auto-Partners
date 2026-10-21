@@ -45,11 +45,11 @@ supabase functions deploy account-admin
 
 ## 3. GitHub Pages
 
-У репозиторії Settings → Pages → Source виберіть GitHub Actions. Після завершення налаштування Supabase вручну запустіть Actions → Publish HTTPS app → Run workflow для main.
+У репозиторії Settings → Pages → Source виберіть GitHub Actions. Після завершення налаштування Supabase зміни в main публікуються автоматично. За потреби повторної публікації використайте Actions → Publish HTTPS app → Run workflow для main.
 
-Workflow перевіряє типи, SQL/серверні тести та збирає застосунок із `VITE_DATA_BACKEND=supabase` і `VITE_BASE_PATH=/Auto-Partners/`. Секрети до збірки не передаються. Очікувана адреса після успішного deploy: `https://akadirektor.github.io/Auto-Partners/`.
+Публікація автоматично запускається після кожного push або об’єднання змін у main; ручний запуск залишається для повторної публікації. Workflow перевіряє типи, SQL/серверні тести та збирає застосунок із `VITE_DATA_BACKEND=supabase` і `VITE_BASE_PATH=/Auto-Partners/`. Секрети до збірки не передаються. Очікувана адреса після успішного deploy: `https://akadirektor.github.io/Auto-Partners/`.
 
-Публікація запускається лише вручну: підготовлений код не видається за вже налаштовану хмарну систему. Сам frontend відкритий; автомобілі та чати доступні лише після входу дозволених учасників.
+Перед об’єднанням змін, які потребують нових SQL-міграцій, спочатку застосуйте ці міграції в Supabase. Сам frontend відкритий; автомобілі та чати доступні лише після входу дозволених учасників.
 
 ## 4. Перевірка перед спільною роботою
 
