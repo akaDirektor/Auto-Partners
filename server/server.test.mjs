@@ -22,12 +22,17 @@ test('two accounts share cars and chat; authorization and optimistic concurrency
   const msg=await call('/api/messages',{cookie:partner.cookie,body:{carId:id,body:'Готовий до продажу'}});assert.equal(msg.status,200);assert.equal(msg.p.message.authorName,'Партнер');
   assert.equal((await call('/api/messages',{cookie:owner.cookie,body:{body:'Зустрінемось завтра'}})).status,200);
   const shared=await call('/api/workspace',{cookie:owner.cookie});assert.equal(shared.p.messages.length,2);assert.equal(shared.p.cars[0].target,3100);
+  const entry={id:'00000000-0000-4000-8000-000000000010',kind:'funding',amount:1234.56,date:'2026-10-21',note:'Test funding'};
+  assert.equal((await call('/api/funding',{cookie:partner.cookie,body:{entry}})).status,403);
+  assert.equal((await call('/api/funding',{cookie:owner.cookie,body:{entry}})).status,200);
+  assert.equal((await call('/api/funding',{cookie:owner.cookie,body:{entry}})).status,200);
+  assert.equal((await call('/api/funding',{cookie:partner.cookie})).p.entries.length,1);
   const backup=await call('/api/backup',{cookie:owner.cookie});assert.equal(backup.p.cars.length,1);assert.equal(backup.p.messages.length,2);assert.equal('users' in backup.p,false);
   assert.equal((await call('/api/backup',{cookie:partner.cookie})).status,403);
   assert.equal((await call('/api/logout',{cookie:partner.cookie,body:{}})).status,200);assert.equal((await call('/api/workspace',{cookie:partner.cookie})).status,401);
   await app.close();
   app=await createApp({databasePath,secure:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));url=`http://127.0.0.1:${app.server.address().port}`;
-  const persisted=await call('/api/workspace',{cookie:owner.cookie});assert.equal(persisted.status,200);assert.equal(persisted.p.cars.length,1);assert.deepEqual(persisted.p.cars[0].photos,car.photos);assert.equal(persisted.p.messages.length,2);
+  const persisted=await call('/api/workspace',{cookie:owner.cookie});assert.equal(persisted.status,200);assert.equal(persisted.p.cars.length,1);assert.deepEqual(persisted.p.cars[0].photos,car.photos);assert.equal(persisted.p.messages.length,2);assert.equal((await call('/api/funding',{cookie:owner.cookie})).p.entries[0].amount,1234.56);
   const partnerUser=(await call('/api/users',{cookie:owner.cookie})).p.users.find(u=>u.role==='partner');
   const relog=await call('/api/login',{body:{email:'partner@example.com',password:partnerPass}});assert.equal(relog.status,200);
   assert.equal((await call('/api/users/password',{cookie:owner.cookie,body:{id:partnerUser.id,password:randomBytes(20).toString('hex')}})).status,200);

@@ -28,6 +28,7 @@ export async function apiFetch(path:string,init:RequestInit={}):Promise<Response
    return reply(data,path==='/api/users'?201:200);
   }
   if(path==='/api/cars'&&body.car?.photos?.length){const {error}=await cloud.rpc('ap_photo_ready');if(error)return reply({error:'Для збереження фотографій спочатку виконай SQL-оновлення фотографій у Supabase.'},503)}
+  if(path==='/api/funding'){const {data,error}=await cloud.rpc(init.method==='POST'?'ap_save_funding':'ap_funding_list',init.method==='POST'?{p_entry:body.entry}:{});if(error)return reply({error:error.code==='PGRST202'?'Для обліку інвестицій спочатку виконай SQL-оновлення фінансування в Supabase.':error.message},error.code==='PGRST202'?503:errorStatus(error));return reply(data)}
   const routes:Record<string,[string,Record<string,unknown>]>={
    '/api/session':['ap_session',{}],'/api/workspace':['ap_workspace',{}],
    '/api/cars':['ap_save_car',{p_car:body.car,p_id:body.id??null,p_version:body.version??null}],

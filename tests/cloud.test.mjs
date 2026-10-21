@@ -1,3 +1,4 @@
+import {fundingTotals} from '../src/funding.ts';
 import {test} from 'node:test';
 import {randomBytes} from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -16,6 +17,7 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  create function auth.jwt() returns jsonb language sql stable as $$select jsonb_build_object('session_id',current_setting('request.jwt.claim.session_id',true))$$;`);
  await db.exec(await readFile(new URL('../supabase/migrations/202610210001_workspace.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610210002_photos.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610210003_funding.sql',import.meta.url),'utf8'));
  for(const u of [owner,partner,outsider]){
   await db.query('insert into auth.users values($1)',[u]);await db.query("insert into auth.sessions(id,user_id,created_at) values($1,$2,now()-interval '1 minute')",[sid(u),u]);
  }
@@ -53,6 +55,16 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  await db.query("insert into public.ap_messages(body,author_id,author_name) select 'archive '||g,$1,'Слава' from generate_series(1,1001) g",[owner]);
  assert.equal((await rpc(owner,'ap_workspace')).messages.length,1000);assert.equal((await rpc(owner,'ap_backup')).messages.length,1003);
  await assert.rejects(rpc(owner,'ap_revoke_user',[partner]),/permission denied/);
+ const funding={id:'00000000-0000-4000-8000-000000000010',kind:'funding',amount:1234.56,date:'2026-10-21',note:'Test funding'};
+ await assert.rejects(rpc(partner,'ap_save_funding',[funding]),/лише власник/);
+ await assert.rejects(rpc(outsider,'ap_funding_list'),/Немає доступу/);
+ await rpc(owner,'ap_save_funding',[funding]);await rpc(owner,'ap_save_funding',[funding]);
+ await assert.rejects(rpc(owner,'ap_save_funding',[{...funding,amount:1}]),/іншими даними/);
+ await rpc(owner,'ap_save_funding',[{...funding,id:'00000000-0000-4000-8000-000000000011',kind:'repayment',amount:234.56}]);
+ const fundingView=await rpc(partner,'ap_funding_list');assert.equal(fundingView.entries.length,2);assert.deepEqual(fundingTotals(fundingView.entries),{funded:1234.56,repaid:234.56,outstanding:1000});
+ for(const invalid of [{...funding,amount:-1},{...funding,date:'2026-02-30'},{...funding,kind:'other'}])await assert.rejects(rpc(owner,'ap_save_funding',[invalid]));
+ await assert.rejects(as(partner,'insert into public.ap_funding_entries(id) values(gen_random_uuid())'),/permission denied/);
+ assert.equal((await rpc(owner,'ap_backup')).funding.length,2);
  await db.exec('reset role;set role service_role');await db.query('select public.ap_revoke_user($1)',[partner]);
  await assert.rejects(rpc(partner,'ap_workspace'),/Сесія завершена/);
  assert.deepEqual((await as(partner,'select * from public.ap_cars')).rows,[]);

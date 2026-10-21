@@ -13,3 +13,4 @@
 .photo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.photo-grid img{width:100%;height:100px;object-fit:cover;border-radius:8px}.photo-grid button{font-size:11px;padding:6px;margin:4px 3px 0 0}
 .photo-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:18px 0}.photo-gallery a:first-child{grid-column:1/-1}.photo-gallery img{width:100%;height:100px;object-fit:cover;border-radius:10px}.photo-gallery a:first-child img{height:auto;max-height:300px}
 @media(max-width:600px){.photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.demo-tools{align-items:flex-start}}
+.funding-note{margin:0 0 22px;color:#61716e;line-height:1.7;font-size:14px}.funding-form{padding:24px;background:white;border:1px solid #e5e9e7;border-radius:16px;margin-bottom:24px}.funding-form h2{margin-top:0}.funding-form .primary{margin-top:18px}.funding-note-cell{white-space:normal;max-width:340px}
