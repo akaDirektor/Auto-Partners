@@ -87,7 +87,7 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
    if(!['GET','HEAD'].includes(req.method))throw fail(405,'Метод не підтримується.');
    const dist=join(root,'dist');const local=resolve(dist,'.'+decodeURIComponent(path));if(local!==dist&&!local.startsWith(dist+'/'))throw fail(404,'Не знайдено.');
    const isFile=existsSync(local)&&statSync(local).isFile();const file=isFile?local:join(dist,'index.html');if(!existsSync(file))throw fail(503,'Виконай npm run build.');
-   if(!isFile&&extname(path))throw fail(404,'Не знайдено.');const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.json':'application/json'};
+   if(!isFile&&extname(path))throw fail(404,'Не знайдено.');const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.json':'application/json','.webmanifest':'application/manifest+json'};
    res.writeHead(200,{'Content-Type':types[extname(file)]||'application/octet-stream','Cache-Control':extname(file)==='.html'?'no-cache':'public, max-age=3600'});if(req.method==='HEAD')res.end();else createReadStream(file).pipe(res);
   }catch(e){if(!e.status)console.error('Request failed',e);json(res,e.status||500,{error:e.status?e.message:'Не вдалося виконати запит.'});}
  };
