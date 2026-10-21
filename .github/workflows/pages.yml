@@ -1,5 +1,7 @@
 name: Publish HTTPS app
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
