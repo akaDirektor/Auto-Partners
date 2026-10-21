@@ -1,3 +1,4 @@
+import {fundingInput} from '../src/funding.ts';
 import http from 'node:http';
 import {DatabaseSync} from 'node:sqlite';
 import {randomBytes,randomUUID,scrypt as scryptCallback,timingSafeEqual,createHash} from 'node:crypto';
@@ -21,6 +22,7 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
  CREATE TABLE IF NOT EXISTS login_attempts(key TEXT PRIMARY KEY,count INTEGER NOT NULL,window_start INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS cars(id TEXT PRIMARY KEY,version INTEGER NOT NULL DEFAULT 1,payload TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,updated_by TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,car_id TEXT REFERENCES cars(id),body TEXT NOT NULL,author_id TEXT NOT NULL REFERENCES users(id),author_name TEXT NOT NULL,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS funding_entries(id TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('funding','repayment')),amount REAL NOT NULL CHECK(amount>0),date TEXT NOT NULL,note TEXT NOT NULL,author_id TEXT NOT NULL REFERENCES users(id),author_name TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS messages_car_date ON messages(car_id,created_at);`);
  if(!db.prepare('SELECT id FROM users LIMIT 1').get()){
   if(!emailValid(ownerEmail)||!ownerPassword||ownerPassword.length<12||ownerPassword.length>128||ownerPassword.startsWith('replace-with-')){db.close();throw Error('Перший запуск: встанови OWNER_EMAIL та унікальний OWNER_PASSWORD (12–128 символів).');}
@@ -33,6 +35,7 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
  const body=async req=>{if(!String(req.headers['content-type']||'').startsWith('application/json'))throw fail(415,'Потрібен JSON-запит.');let text='';for await(const chunk of req){text+=chunk.toString();if(Buffer.byteLength(text)>1100000)throw fail(413,'Завеликий запит.');}try{return JSON.parse(text)}catch{throw fail(400,'Некоректний JSON.')}};
  const asCar=r=>({...JSON.parse(r.payload),id:r.id,version:r.version,createdAt:r.created_at,updatedAt:r.updated_at,updatedBy:r.updated_by,createdBy:r.created_by});
  const asMessage=r=>({id:r.id,carId:r.car_id,body:r.body,authorId:r.author_id,authorName:r.author_name,createdAt:r.created_at});
+ const asFunding=e=>({id:e.id,kind:e.kind,amount:e.amount,date:e.date,note:e.note,authorName:e.author_name,createdAt:e.created_at});
  const handler=async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
@@ -79,8 +82,14 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
      if(user.role!=='owner')throw fail(403,'Керувати доступом може власник.');const p=await body(req);if(typeof p?.id!=='string'||typeof p.password!=='string'||p.password.length<12||p.password.length>128)throw fail(400,'Пароль має містити 12–128 символів.');
      const result=db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await passwordHash(p.password),p.id);if(!result.changes)throw fail(404,'Користувача не знайдено.');db.prepare('DELETE FROM sessions WHERE user_id=?').run(p.id);return json(res,200,{ok:true});
     }
+    if(path==='/api/funding'&&req.method==='GET')return json(res,200,{entries:db.prepare('SELECT * FROM funding_entries ORDER BY date DESC,created_at DESC,id').all().map(asFunding)});
+    if(path==='/api/funding'&&req.method==='POST'){
+     if(user.role!=='owner')throw fail(403,'Операції фінансування вносить лише власник.');const p=await body(req);const parsed=fundingInput.safeParse(p?.entry);if(!parsed.success)throw fail(400,'Перевір тип операції, суму, дату й примітку.');const e=parsed.data;
+     db.prepare('INSERT INTO funding_entries VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(e.id,e.kind,e.amount,e.date,e.note,user.id,user.name,new Date().toISOString());const row=db.prepare('SELECT * FROM funding_entries WHERE id=?').get(e.id);
+     if(row.kind!==e.kind||row.amount!==e.amount||row.date!==e.date||row.note!==e.note||row.author_id!==user.id)throw fail(409,'Ця операція вже існує з іншими даними.');return json(res,200,{entry:asFunding(row)});
+    }
     if(path==='/api/backup'&&req.method==='GET'){
-     if(user.role!=='owner')throw fail(403,'Експорт доступний власнику.');res.setHeader('Content-Disposition','attachment; filename="auto-partners-backup.json"');return json(res,200,{version:1,createdAt:new Date().toISOString(),cars:db.prepare('SELECT * FROM cars').all().map(asCar),messages:db.prepare('SELECT * FROM messages').all().map(asMessage)});
+     if(user.role!=='owner')throw fail(403,'Експорт доступний власнику.');res.setHeader('Content-Disposition','attachment; filename="auto-partners-backup.json"');return json(res,200,{funding:db.prepare('SELECT * FROM funding_entries ORDER BY date,created_at,id').all().map(asFunding),version:1,createdAt:new Date().toISOString(),cars:db.prepare('SELECT * FROM cars').all().map(asCar),messages:db.prepare('SELECT * FROM messages').all().map(asMessage)});
     }
     throw fail(404,'Не знайдено.');
    }
