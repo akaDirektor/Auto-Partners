@@ -30,7 +30,7 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
  const sessionFrom=req=>{const token=String(req.headers.cookie||'').match(/(?:^|;\s*)auto_session=([a-f0-9]{64})(?:;|$)/)?.[1];if(!token)return null;return db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?').get(hashToken(token),Date.now())||null;};
  const cookie=(token,age)=>`auto_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${age}${secure?'; Secure':''}`;
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
- const body=async req=>{if(!String(req.headers['content-type']||'').startsWith('application/json'))throw fail(415,'Потрібен JSON-запит.');let text='';for await(const chunk of req){text+=chunk.toString();if(Buffer.byteLength(text)>32000)throw fail(413,'Завеликий запит.');}try{return JSON.parse(text)}catch{throw fail(400,'Некоректний JSON.')}};
+ const body=async req=>{if(!String(req.headers['content-type']||'').startsWith('application/json'))throw fail(415,'Потрібен JSON-запит.');let text='';for await(const chunk of req){text+=chunk.toString();if(Buffer.byteLength(text)>1100000)throw fail(413,'Завеликий запит.');}try{return JSON.parse(text)}catch{throw fail(400,'Некоректний JSON.')}};
  const asCar=r=>({...JSON.parse(r.payload),id:r.id,version:r.version,createdAt:r.created_at,updatedAt:r.updated_at,updatedBy:r.updated_by,createdBy:r.created_by});
  const asMessage=r=>({id:r.id,carId:r.car_id,body:r.body,authorId:r.author_id,authorName:r.author_name,createdAt:r.created_at});
  const handler=async(req,res)=>{

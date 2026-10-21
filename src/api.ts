@@ -27,6 +27,7 @@ export async function apiFetch(path:string,init:RequestInit={}):Promise<Response
    if(body.id===session.session.user.id&&path.endsWith('/password')){await cloud.auth.signOut({scope:'local'});window.dispatchEvent(new Event('auto-partners-session-ended'))}
    return reply(data,path==='/api/users'?201:200);
   }
+  if(path==='/api/cars'&&body.car?.photos?.length){const {error}=await cloud.rpc('ap_photo_ready');if(error)return reply({error:'Для збереження фотографій спочатку виконай SQL-оновлення фотографій у Supabase.'},503)}
   const routes:Record<string,[string,Record<string,unknown>]>={
    '/api/session':['ap_session',{}],'/api/workspace':['ap_workspace',{}],
    '/api/cars':['ap_save_car',{p_car:body.car,p_id:body.id??null,p_version:body.version??null}],

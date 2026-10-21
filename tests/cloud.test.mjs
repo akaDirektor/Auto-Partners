@@ -15,6 +15,7 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
  create function auth.jwt() returns jsonb language sql stable as $$select jsonb_build_object('session_id',current_setting('request.jwt.claim.session_id',true))$$;`);
  await db.exec(await readFile(new URL('../supabase/migrations/202610210001_workspace.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610210002_photos.sql',import.meta.url),'utf8'));
  for(const u of [owner,partner,outsider]){
   await db.query('insert into auth.users values($1)',[u]);await db.query("insert into auth.sessions(id,user_id,created_at) values($1,$2,now()-interval '1 minute')",[sid(u),u]);
  }
@@ -28,8 +29,9 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  assert.deepEqual((await as(outsider,'select * from public.ap_cars')).rows,[]);
  await assert.rejects(rpc(partner,'ap_users'),/власник/);
  assert.equal((await as(partner,'select * from public.ap_members')).rows.length,1);
- const car={...blankCar,make:'Opel',model:'Astra',year:2012,engine:'1.6',gearbox:'Механіка',color:'Сірий',purchase:2000,expenses:400,minimum:2700,target:3000};
- const created=(await rpc(owner,'ap_save_car',[car])).car;assert.equal(created.version,1);
+ const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
+ const car={photos:[photo],...blankCar,make:'Opel',model:'Astra',year:2012,engine:'1.6',gearbox:'Механіка',color:'Сірий',purchase:2000,expenses:400,minimum:2700,target:3000};
+ const created=(await rpc(owner,'ap_save_car',[car])).car;assert.equal(created.version,1);assert.deepEqual(created.photos,[photo]);
  assert.equal((await rpc(partner,'ap_workspace')).cars[0].id,created.id);
  const updated=(await rpc(partner,'ap_save_car',[{...car,target:3100},created.id,1])).car;
  assert.equal(updated.version,2);assert.equal(updated.updatedBy,'Партнер');
@@ -37,7 +39,7 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  await assert.rejects(as(owner,'update public.ap_cars set version=99'),/permission denied/);
  await assert.rejects(rpc(owner,'ap_save_car',[{...car,target:2600}]),/Цільова ціна/);
  await assert.rejects(rpc(owner,'ap_save_car',[{...car,status:'sold'}]),/фактичну ціну/);
- for(const bad of [{...car,purchase:-1},{...car,boughtAt:'2026-02-30'},{...car,year:2012.5},{...car,model:''},{...car,url:'javascript:alert(1)'},{...car,expenses:'400'}])await assert.rejects(rpc(owner,'ap_save_car',[bad]));
+ for(const bad of [{...car,photos:['https://evil.example/image.jpg']},{...car,photos:Array(7).fill(photo)},{...car,photos:['data:image/svg+xml;base64,AAAA']},{...car,purchase:-1},{...car,boughtAt:'2026-02-30'},{...car,year:2012.5},{...car,model:''},{...car,url:'javascript:alert(1)'},{...car,expenses:'400'}])await assert.rejects(rpc(owner,'ap_save_car',[bad]));
  const sold=(await rpc(owner,'ap_save_car',[{...car,status:'sold',actual:3200},created.id,2])).car;
  assert.equal(profit(sold,sold.actual),800);assert.equal(profit(sold,sold.minimum),300);assert.equal(profit(sold),600);
  const msg=(await rpc(partner,'ap_send_message',['Готовий до продажу',created.id])).message;
