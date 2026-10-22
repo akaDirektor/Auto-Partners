@@ -1,3 +1,4 @@
+import TextSize from './text-size';
 import Approval from './car-approval';
 import FundingPanel from './funding-panel';
 import {MAX_PHOTOS,preparePhoto} from './photos';
@@ -40,6 +41,7 @@ export default function Workspace(){
   </aside>
   <div className="main-wrap"><header className="topbar"><span className="breadcrumb">Спільний простір<ChevronRight size={14}/><b>{tab==='cars'?'Автомобілі в роботі':tab==='pending'?'На затвердженні':tab==='chat'?'Обговорення':tab==='funding'?'Інвестиції':'Домовленості'}</b></span><div className="top-actions">{user?.role==='owner'&&<button className="icon-button" title="Користувачі та доступ" onClick={()=>setAccess(true)}><Users size={17}/></button>}<button className="icon-button" title="Вийти з акаунта" onClick={async()=>{await apiFetch('/api/logout',{method:'POST'});location.reload()}}><LogOut size={17}/></button><span className={'sync '+(!synced?'offline':'')}><i/>{loading?'Підключення…':synced?'Усі зміни збережено':'Немає зв’язку'}</span><button className="icon-button" title="Оновити дані" onClick={sync}><RefreshCw size={17}/></button></div></header>
    <main>
+    <TextSize/>
     {error&&<div role="alert" className="alert"><AlertCircle size={18}/>{error}<button onClick={sync}>Повторити</button></div>}
     {(tab==='cars'||tab==='pending')&&<><div className="page-title"><div><span className="eyebrow">ВАШ СПІЛЬНИЙ АВТОПАРК</span><h1>{tab==='pending'?'Автомобілі на затвердженні':'Від ідеї до продажу'}<span>.</span></h1><p>{tab==='pending'?'Потрібна окрема згода обох партнерів перед початком роботи.':'Узгоджені автомобілі, цифри та домовленості — поруч.'}</p></div><button className="primary" onClick={()=>(setTab('pending'),setEditor('new'))} disabled={loading||!user}><Plus size={18}/>Додати автомобіль</button></div>
      {tab==='cars'&&<section className="stats"><div className="stat"><span>Загальні вкладення <Wallet size={18}/></span><strong>{money(investment)}</strong><small>Купівля та погоджені витрати</small></div><div className="stat"><span>Прибуток за мін. ціною <TrendingUp size={18}/></span><strong className={minProfit<0?'negative':''}>{money(minProfit)}</strong><small>Нижній орієнтир за всіма авто</small></div><div className="stat featured"><span>Цільовий прибуток <ArrowUpRight size={20}/></span><strong>{money(targetProfit)}</strong><small>Для розподілу після покриття витрат</small></div></section>}
