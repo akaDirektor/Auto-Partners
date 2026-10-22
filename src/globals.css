@@ -44,3 +44,5 @@
  :root[data-text-size="largest"] .drawer-header>span{flex:1}
  .editor-footer button{min-height:44px}.terms p{line-height:1.7}
 }
+
+.car-owner-actions{display:flex;margin:16px 0 22px}.secondary.delete-car-detail{color:#a13c31;border-color:#e7bfb9;min-height:44px;white-space:normal;text-align:left}.secondary.delete-car-detail:hover{background:#fff0ec}.delete-overlay{z-index:60}.delete-actions{flex-wrap:wrap}
