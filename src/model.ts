@@ -1,3 +1,4 @@
+import type {CarApproval} from './approval';
 import { z } from 'zod';
 export const statuses={planned:'Заплановано',bought:'Придбано',preparing:'Підготовка',selling:'У продажу',sold:'Продано'} as const;
 const amount=z.number().finite().min(0).max(10000000).transform(n=>Math.round(n*100)/100);
@@ -10,7 +11,7 @@ export const carInput=z.object({make:z.string().trim().min(1,'Вкажи мар�
 }).refine(c=>c.target>=c.minimum,{message:'Цільова ціна має бути не нижчою за мінімальну',path:['target']})
  .refine(c=>c.status!=='sold'||c.actual!==null,{message:'Вкажи фактичну ціну продажу',path:['actual']});
 export type CarInput=z.input<typeof carInput>;
-export type Car=CarInput & {id:string;version:number;createdAt:string;updatedAt:string;updatedBy:string;createdBy:string};
+export type Car=CarInput & {approval?:CarApproval;id:string;version:number;createdAt:string;updatedAt:string;updatedBy:string;createdBy:string};
 export type Message={id:string;carId:string|null;body:string;authorId:string;authorName:string;createdAt:string};
 export const money=(n:number)=>new Intl.NumberFormat('uk-UA',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
 export const profit=(c:CarInput,price=c.target)=>Math.round((price-c.purchase-c.expenses)*100)/100;
