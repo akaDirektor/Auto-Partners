@@ -18,6 +18,7 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  await db.exec(await readFile(new URL('../supabase/migrations/202610210001_workspace.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610210002_photos.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610210003_funding.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610210004_owner_delete.sql',import.meta.url),'utf8'));
  for(const u of [owner,partner,outsider]){
   await db.query('insert into auth.users values($1)',[u]);await db.query("insert into auth.sessions(id,user_id,created_at) values($1,$2,now()-interval '1 minute')",[sid(u),u]);
  }
@@ -65,6 +66,18 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  for(const invalid of [{...funding,amount:-1},{...funding,date:'2026-02-30'},{...funding,kind:'other'}])await assert.rejects(rpc(owner,'ap_save_funding',[invalid]));
  await assert.rejects(as(partner,'insert into public.ap_funding_entries(id) values(gen_random_uuid())'),/permission denied/);
  assert.equal((await rpc(owner,'ap_backup')).funding.length,2);
+ const removable=(await rpc(owner,'ap_save_car',[car])).car;
+ await assert.rejects(rpc(partner,'ap_delete_car',[removable.id,1]),/лише власник/);
+ await rpc(partner,'ap_save_car',[car,removable.id,1]);
+ await assert.rejects(rpc(owner,'ap_delete_car',[removable.id,1]),/змінено або видалено/);
+ await rpc(owner,'ap_send_message',['Temporary car discussion',removable.id]);
+ await rpc(owner,'ap_delete_car',[removable.id,2]);
+ assert.equal((await rpc(partner,'ap_workspace')).cars.some(c=>c.id===removable.id),false);
+ assert.equal((await rpc(partner,'ap_workspace')).messages.some(m=>m.carId===removable.id),false);
+ assert.equal((await as(partner,'select * from public.ap_cars where id=$1',[removable.id])).rows.length,0);
+ await assert.rejects(rpc(partner,'ap_save_car',[car,removable.id,3]),/Партнер уже оновив/);
+ await assert.rejects(rpc(owner,'ap_send_message',['Must not be allowed',removable.id]),/не знайдено/);
+ assert.equal((await rpc(owner,'ap_backup')).cars.find(c=>c.id===removable.id).deleted,true);
  await db.exec('reset role;set role service_role');await db.query('select public.ap_revoke_user($1)',[partner]);
  await assert.rejects(rpc(partner,'ap_workspace'),/Сесія завершена/);
  assert.deepEqual((await as(partner,'select * from public.ap_cars')).rows,[]);
@@ -74,7 +87,7 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  assert.equal((await rpc(partner,'ap_session')).user.id,partner);
  // A persisted PostgreSQL snapshot retains the shared records.
  await db.exec('reset role');const dump=await db.dumpDataDir();const restored=new PGlite({loadDataDir:dump});
- assert.equal((await restored.query('select count(*)::int n from public.ap_cars')).rows[0].n,1);await restored.close();
+ assert.equal((await restored.query("select count(*)::int n from public.ap_cars where payload->>'deleted' is distinct from 'true'")).rows[0].n,1);await restored.close();
  }finally{await db.close()}
 });
 

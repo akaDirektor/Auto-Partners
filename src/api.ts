@@ -31,13 +31,14 @@ export async function apiFetch(path:string,init:RequestInit={}):Promise<Response
   if(path==='/api/funding'){const {data,error}=await cloud.rpc(init.method==='POST'?'ap_save_funding':'ap_funding_list',init.method==='POST'?{p_entry:body.entry}:{});if(error)return reply({error:error.code==='PGRST202'?'Для обліку інвестицій спочатку виконай SQL-оновлення фінансування в Supabase.':error.message},error.code==='PGRST202'?503:errorStatus(error));return reply(data)}
   const routes:Record<string,[string,Record<string,unknown>]>={
    '/api/session':['ap_session',{}],'/api/workspace':['ap_workspace',{}],
+   '/api/cars/delete':['ap_delete_car',{p_id:body.id,p_version:body.version}],
    '/api/cars':['ap_save_car',{p_car:body.car,p_id:body.id??null,p_version:body.version??null}],
    '/api/messages':['ap_send_message',{p_body:body.body,p_car_id:body.carId??null}],
    '/api/users':['ap_users',{}],'/api/backup':['ap_backup',{}],
   };
   const route=routes[path];if(!route)return reply({error:'Не знайдено.'},404);
   const {data,error}=await cloud.rpc(route[0],route[1]);
-  if(error){const status=errorStatus(error);if(status===401){await cloud.auth.signOut({scope:'local'});window.dispatchEvent(new Event('auto-partners-session-ended'))}return reply({error:status<500?error.message:'Не вдалося завантажити дані. Перевір підключення та налаштування Supabase.'},status)}
+  if(error){const status=errorStatus(error);if(status===401){await cloud.auth.signOut({scope:'local'});window.dispatchEvent(new Event('auto-partners-session-ended'))}return reply({error:error.code==='PGRST202'&&path==='/api/cars/delete'?'Для видалення спочатку виконай SQL-оновлення прав власника в Supabase.':status<500?error.message:'Не вдалося завантажити дані. Перевір підключення та налаштування Supabase.'},status)}
   return reply(data);
  }catch{return reply({error:'Не вдалося підключитися. Спробуй ще раз.'},503)}
 }

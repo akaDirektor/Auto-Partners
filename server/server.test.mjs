@@ -30,6 +30,13 @@ test('two accounts share cars and chat; authorization and optimistic concurrency
   const backup=await call('/api/backup',{cookie:owner.cookie});assert.equal(backup.p.cars.length,1);assert.equal(backup.p.messages.length,2);assert.equal('users' in backup.p,false);
   assert.equal((await call('/api/backup',{cookie:partner.cookie})).status,403);
   assert.equal((await call('/api/logout',{cookie:partner.cookie,body:{}})).status,200);assert.equal((await call('/api/workspace',{cookie:partner.cookie})).status,401);
+  const deletePartner=await call('/api/login',{body:{email:'partner@example.com',password:partnerPass}});
+  const removable=await call('/api/cars',{cookie:owner.cookie,body:{car}});
+  assert.equal((await call('/api/cars/delete',{cookie:deletePartner.cookie,body:{id:removable.p.car.id,version:1}})).status,403);
+  assert.equal((await call('/api/cars/delete',{cookie:owner.cookie,body:{id:removable.p.car.id,version:0}})).status,409);
+  assert.equal((await call('/api/cars/delete',{cookie:owner.cookie,body:{id:removable.p.car.id,version:1}})).status,200);
+  assert.equal((await call('/api/workspace',{cookie:owner.cookie})).p.cars.some(c=>c.id===removable.p.car.id),false);
+  assert.equal((await call('/api/cars',{cookie:owner.cookie,body:{id:removable.p.car.id,version:2,car}})).status,409);
   await app.close();
   app=await createApp({databasePath,secure:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));url=`http://127.0.0.1:${app.server.address().port}`;
   const persisted=await call('/api/workspace',{cookie:owner.cookie});assert.equal(persisted.status,200);assert.equal(persisted.p.cars.length,1);assert.deepEqual(persisted.p.cars[0].photos,car.photos);assert.equal(persisted.p.messages.length,2);assert.equal((await call('/api/funding',{cookie:owner.cookie})).p.entries[0].amount,1234.56);
