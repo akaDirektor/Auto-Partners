@@ -19,6 +19,7 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  await db.exec(await readFile(new URL('../supabase/migrations/202610210002_photos.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610210003_funding.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610210004_owner_delete.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610220001_joint_approval.sql',import.meta.url),'utf8'));
  for(const u of [owner,partner,outsider]){
   await db.query('insert into auth.users values($1)',[u]);await db.query("insert into auth.sessions(id,user_id,created_at) values($1,$2,now()-interval '1 minute')",[sid(u),u]);
  }
@@ -34,24 +35,34 @@ test('cloud database: two accounts, RLS, optimistic edits, validation, chat, bac
  assert.equal((await as(partner,'select * from public.ap_members')).rows.length,1);
  const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
  const car={photos:[photo],...blankCar,make:'Opel',model:'Astra',year:2012,engine:'1.6',gearbox:'Механіка',color:'Сірий',purchase:2000,expenses:400,minimum:2700,target:3000};
- const created=(await rpc(owner,'ap_save_car',[car])).car;assert.equal(created.version,1);assert.deepEqual(created.photos,[photo]);
+ const created=(await rpc(owner,'ap_save_car',[car])).car;assert.equal(created.version,1);assert.deepEqual(created.photos,[photo]);assert.equal(created.approval.approved,false);
+ await assert.rejects(rpc(owner,'ap_save_car',[{...car,status:'bought'},created.id,1]),/дві згоди/);
+ await rpc(owner,'ap_approve_car',[created.id,1]);
+ assert.equal((await rpc(owner,'ap_approve_car',[created.id,1])).car.approval.signatures.length,1);
+ await assert.rejects(rpc(owner,'ap_save_car',[{...car,status:'bought'},created.id,1]),/дві згоди/);
+ await assert.rejects(rpc(outsider,'ap_approve_car',[created.id,1]),/Немає доступу/);
+ assert.equal((await rpc(partner,'ap_approve_car',[created.id,1])).car.approval.approved,true);
  assert.equal((await rpc(partner,'ap_workspace')).cars[0].id,created.id);
  const updated=(await rpc(partner,'ap_save_car',[{...car,target:3100},created.id,1])).car;
- assert.equal(updated.version,2);assert.equal(updated.updatedBy,'Партнер');
+ assert.equal(updated.version,2);assert.equal(updated.updatedBy,'Партнер');assert.equal(updated.approval.approved,false);assert.equal(updated.approval.revision,2);
+ await assert.rejects(rpc(owner,'ap_approve_car',[created.id,1]),/Умови автомобіля змінилися/);
+ await rpc(owner,'ap_approve_car',[created.id,2]);await rpc(partner,'ap_approve_car',[created.id,2]);
  await assert.rejects(rpc(owner,'ap_save_car',[car,created.id,1]),/Партнер уже оновив/);
  await assert.rejects(as(owner,'update public.ap_cars set version=99'),/permission denied/);
  await assert.rejects(rpc(owner,'ap_save_car',[{...car,target:2600}]),/Цільова ціна/);
  await assert.rejects(rpc(owner,'ap_save_car',[{...car,status:'sold'}]),/фактичну ціну/);
  for(const bad of [{...car,photos:['https://evil.example/image.jpg']},{...car,photos:Array(7).fill(photo)},{...car,photos:['data:image/svg+xml;base64,AAAA']},{...car,purchase:-1},{...car,boughtAt:'2026-02-30'},{...car,year:2012.5},{...car,model:''},{...car,url:'javascript:alert(1)'},{...car,expenses:'400'}])await assert.rejects(rpc(owner,'ap_save_car',[bad]));
- const sold=(await rpc(owner,'ap_save_car',[{...car,status:'sold',actual:3200},created.id,2])).car;
- assert.equal(profit(sold,sold.actual),800);assert.equal(profit(sold,sold.minimum),300);assert.equal(profit(sold),600);
+ const sold=(await rpc(owner,'ap_save_car',[{...car,target:3100,status:'sold',actual:3200},created.id,2])).car;
+ assert.equal(profit(sold,sold.actual),800);assert.equal(profit(sold,sold.minimum),300);assert.equal(profit(sold),700);
  const msg=(await rpc(partner,'ap_send_message',['Готовий до продажу',created.id])).message;
  assert.equal(msg.authorName,'Партнер');assert.equal(msg.authorId,partner);assert.ok(msg.createdAt);
  await rpc(owner,'ap_send_message',['Загальний чат']);
  assert.equal((await rpc(partner,'ap_workspace')).messages.length,2);
  await assert.rejects(rpc(owner,'ap_send_message',[' ']),/Повідомлення/);
  await assert.rejects(rpc(partner,'ap_backup'),/власнику/);
- const backup=await rpc(owner,'ap_backup');assert.equal(backup.messages.length,2);assert.equal(backup.cars[0].actual,3200);assert.equal('users' in backup,false);
+ const backup=await rpc(owner,'ap_backup');assert.equal(backup.messages.length,2);assert.equal(backup.cars[0].actual,3200);assert.equal('users' in backup,false);assert.equal(backup.approvalHistory.find(a=>a.revision===1).proposal.target,3000);
+ const revised=(await rpc(owner,'ap_save_car',[{...car,target:4000},created.id,3])).car;assert.equal(revised.approval.approved,false);assert.equal(revised.status,'planned');
+ const reverted=(await rpc(owner,'ap_save_car',[{...car,target:3100},created.id,4])).car;assert.equal(reverted.approval.approved,false);assert.equal(reverted.approval.signatures.length,0);
  await db.exec('reset role');
  await db.query("insert into public.ap_messages(body,author_id,author_name) select 'archive '||g,$1,'Слава' from generate_series(1,1001) g",[owner]);
  assert.equal((await rpc(owner,'ap_workspace')).messages.length,1000);assert.equal((await rpc(owner,'ap_backup')).messages.length,1003);
