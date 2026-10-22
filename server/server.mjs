@@ -61,16 +61,21 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
    if(path.startsWith('/api/')){
     if(!user)throw fail(401,'Сесія завершилася. Увійди знову.');
     if(path==='/api/logout'&&req.method==='POST'){const token=String(req.headers.cookie||'').match(/auto_session=([a-f0-9]{64})/)?.[1];if(token)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));res.setHeader('Set-Cookie',cookie('',0));return json(res,200,{ok:true});}
-    if(path==='/api/workspace'&&req.method==='GET'){return json(res,200,{cars:db.prepare('SELECT * FROM cars ORDER BY created_at DESC').all().map(asCar),messages:db.prepare('SELECT * FROM (SELECT * FROM messages ORDER BY created_at DESC LIMIT 1000) ORDER BY created_at').all().map(asMessage),user:safeUser(user)});}
+    if(path==='/api/workspace'&&req.method==='GET'){return json(res,200,{cars:db.prepare("SELECT * FROM cars WHERE COALESCE(json_extract(payload,'$.deleted'),0)<>1 ORDER BY created_at DESC").all().map(asCar),messages:db.prepare('SELECT * FROM (SELECT m.* FROM messages m WHERE m.car_id IS NULL OR EXISTS(SELECT 1 FROM cars c WHERE c.id=m.car_id AND COALESCE(json_extract(c.payload,\'$.deleted\'),0)<>1) ORDER BY m.created_at DESC LIMIT 1000) ORDER BY created_at').all().map(asMessage),user:safeUser(user)});}
+    if(path==='/api/cars/delete'&&req.method==='POST'){
+     if(user.role!=='owner')throw fail(403,'Видаляти автомобілі може лише власник.');const p=await body(req);if(typeof p?.id!=='string'||!Number.isInteger(p.version))throw fail(400,'Некоректний автомобіль або версія.');
+     const result=db.prepare("UPDATE cars SET payload=json_set(payload,'$.deleted',json('true')),version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=? AND COALESCE(json_extract(payload,'$.deleted'),0)<>1").run(new Date().toISOString(),user.name,p.id,p.version);if(!result.changes)throw fail(409,'Автомобіль уже змінено або видалено. Онови таблицю.');return json(res,200,{ok:true});
+    }
     if(path==='/api/cars'&&req.method==='POST'){
+
      const p=await body(req);const parsed=carInput.safeParse(p?.car);if(!parsed.success)throw fail(400,parsed.error.issues[0]?.message||'Перевір поля.');const now=new Date().toISOString();let id=p.id;
-     if(id){if(typeof id!=='string'||!Number.isInteger(p.version))throw fail(400,'Некоректна версія.');const result=db.prepare('UPDATE cars SET payload=?,version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=?').run(JSON.stringify(parsed.data),now,user.name,id,p.version);if(!result.changes)throw fail(409,'Партнер уже оновив автомобіль. Закрий форму й відкрий її знову.');}
+     if(id){if(typeof id!=='string'||!Number.isInteger(p.version))throw fail(400,'Некоректна версія.');const result=db.prepare('UPDATE cars SET payload=?,version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=? AND COALESCE(json_extract(payload,\'$.deleted\'),0)<>1').run(JSON.stringify(parsed.data),now,user.name,id,p.version);if(!result.changes)throw fail(409,'Партнер уже оновив автомобіль. Закрий форму й відкрий її знову.');}
      else{id=randomUUID();db.prepare('INSERT INTO cars VALUES(?,1,?,?,?,?,?)').run(id,JSON.stringify(parsed.data),now,now,user.name,user.id);}
      return json(res,200,{car:asCar(db.prepare('SELECT * FROM cars WHERE id=?').get(id))});
     }
     if(path==='/api/messages'&&req.method==='POST'){
      const p=await body(req);if(typeof p?.body!=='string'||!p.body.trim()||p.body.length>5000)throw fail(400,'Повідомлення має містити 1–5000 символів.');if(p.carId!=null&&typeof p.carId!=='string')throw fail(400,'Некоректний автомобіль.');const carId=p.carId||null;
-     if(carId&&!db.prepare('SELECT id FROM cars WHERE id=?').get(carId))throw fail(404,'Автомобіль не знайдено.');const id=randomUUID();db.prepare('INSERT INTO messages VALUES(?,?,?,?,?,?)').run(id,carId,p.body.trim(),user.id,user.name,new Date().toISOString());return json(res,200,{message:asMessage(db.prepare('SELECT * FROM messages WHERE id=?').get(id))});
+     if(carId&&!db.prepare('SELECT id FROM cars WHERE id=? AND COALESCE(json_extract(payload,\'$.deleted\'),0)<>1').get(carId))throw fail(404,'Автомобіль не знайдено.');const id=randomUUID();db.prepare('INSERT INTO messages VALUES(?,?,?,?,?,?)').run(id,carId,p.body.trim(),user.id,user.name,new Date().toISOString());return json(res,200,{message:asMessage(db.prepare('SELECT * FROM messages WHERE id=?').get(id))});
     }
     if(path==='/api/users'&&req.method==='GET'){if(user.role!=='owner')throw fail(403,'Керувати доступом може власник.');return json(res,200,{users:db.prepare('SELECT * FROM users ORDER BY created_at').all().map(safeUser)});}
     if(path==='/api/users'&&req.method==='POST'){
