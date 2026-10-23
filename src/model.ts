@@ -11,8 +11,10 @@ export const carInput=z.object({make:z.string().trim().min(1,'Вкажи мар�
 }).refine(c=>c.target>=c.minimum,{message:'Цільова ціна має бути не нижчою за мінімальну',path:['target']})
  .refine(c=>c.status!=='sold'||c.actual!==null,{message:'Вкажи фактичну ціну продажу',path:['actual']});
 export type CarInput=z.input<typeof carInput>;
-export type Car=CarInput & {approval?:CarApproval;id:string;version:number;createdAt:string;updatedAt:string;updatedBy:string;createdBy:string};
+export type Car=CarInput & {actualExpenses?:number;expenseCount?:number;approval?:CarApproval;id:string;version:number;createdAt:string;updatedAt:string;updatedBy:string;createdBy:string};
 export type Message={id:string;carId:string|null;body:string;authorId:string;authorName:string;createdAt:string};
-export const money=(n:number)=>new Intl.NumberFormat('uk-UA',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
-export const profit=(c:CarInput,price=c.target)=>Math.round((price-c.purchase-c.expenses)*100)/100;
+export const money=(n:number)=>new Intl.NumberFormat('uk-UA',{style:'currency',currency:'EUR',minimumFractionDigits:0,maximumFractionDigits:2}).format(n);
+export const actualExpenses=(c:CarInput&{actualExpenses?:number})=>c.actualExpenses??0;
+export const costExpenses=(c:CarInput&{actualExpenses?:number})=>c.actualExpenses===undefined?c.expenses:c.status==='sold'?c.actualExpenses:Math.max(c.expenses,c.actualExpenses);
+export const profit=(c:CarInput&{actualExpenses?:number},price=c.target)=>Math.round((price-c.purchase-costExpenses(c))*100)/100;
 export const blankCar:CarInput={make:'',model:'',year:null,engine:'',gearbox:'',color:'',purchase:0,expenses:0,minimum:0,target:0,actual:null,boughtAt:'',sellBy:'',status:'planned',notes:'',url:''};
