@@ -1,3 +1,4 @@
+import {expenseInput} from '../src/expenses.ts';
 import {sameProposal,proposalSnapshot} from '../src/approval.ts';
 import {fundingInput} from '../src/funding.ts';
 import http from 'node:http';
@@ -24,6 +25,8 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
  CREATE TABLE IF NOT EXISTS cars(id TEXT PRIMARY KEY,version INTEGER NOT NULL DEFAULT 1,payload TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,updated_by TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,car_id TEXT REFERENCES cars(id),body TEXT NOT NULL,author_id TEXT NOT NULL REFERENCES users(id),author_name TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS funding_entries(id TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('funding','repayment')),amount REAL NOT NULL CHECK(amount>0),date TEXT NOT NULL,note TEXT NOT NULL,author_id TEXT NOT NULL REFERENCES users(id),author_name TEXT NOT NULL,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS expense_entries(id TEXT PRIMARY KEY,car_id TEXT NOT NULL REFERENCES cars(id),amount REAL NOT NULL CHECK(amount>0),date TEXT NOT NULL,note TEXT NOT NULL,author_id TEXT NOT NULL REFERENCES users(id),author_name TEXT NOT NULL,created_at TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,deleted_at TEXT,deleted_by TEXT REFERENCES users(id));
+ CREATE INDEX IF NOT EXISTS expense_car_date ON expense_entries(car_id,date);
  CREATE TABLE IF NOT EXISTS approval_state(car_id TEXT PRIMARY KEY REFERENCES cars(id),revision INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS car_approvals(car_id TEXT NOT NULL REFERENCES cars(id),revision INTEGER NOT NULL,signer_id TEXT NOT NULL REFERENCES users(id),signer_name TEXT NOT NULL,signer_role TEXT NOT NULL,created_at TEXT NOT NULL,proposal TEXT NOT NULL,PRIMARY KEY(car_id,revision,signer_id));
  CREATE INDEX IF NOT EXISTS messages_car_date ON messages(car_id,created_at);`);
@@ -37,9 +40,10 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
  const body=async req=>{if(!String(req.headers['content-type']||'').startsWith('application/json'))throw fail(415,'Потрібен JSON-запит.');let text='';for await(const chunk of req){text+=chunk.toString();if(Buffer.byteLength(text)>1100000)throw fail(413,'Завеликий запит.');}try{return JSON.parse(text)}catch{throw fail(400,'Некоректний JSON.')}};
  const approval=id=>{const revision=db.prepare('SELECT revision FROM approval_state WHERE car_id=?').get(id)?.revision||1;const rows=db.prepare('SELECT * FROM car_approvals WHERE car_id=? AND revision=? ORDER BY created_at').all(id,revision);return {revision,approved:new Set(rows.map(x=>x.signer_role)).size===2,signatures:rows.map(x=>({userId:x.signer_id,name:x.signer_name,role:x.signer_role,createdAt:x.created_at}))}};
- const asCar=r=>({...JSON.parse(r.payload),id:r.id,version:r.version,createdAt:r.created_at,updatedAt:r.updated_at,updatedBy:r.updated_by,createdBy:r.created_by,approval:approval(r.id)});
+ const asCar=r=>({...JSON.parse(r.payload),id:r.id,version:r.version,createdAt:r.created_at,updatedAt:r.updated_at,updatedBy:r.updated_by,createdBy:r.created_by,approval:approval(r.id),actualExpenses:db.prepare('SELECT ROUND(COALESCE(SUM(amount),0),2) total FROM expense_entries WHERE car_id=? AND deleted_at IS NULL').get(r.id).total,expenseCount:db.prepare('SELECT COUNT(*) n FROM expense_entries WHERE car_id=? AND deleted_at IS NULL').get(r.id).n});
  const asMessage=r=>({id:r.id,carId:r.car_id,body:r.body,authorId:r.author_id,authorName:r.author_name,createdAt:r.created_at});
  const asFunding=e=>({id:e.id,kind:e.kind,amount:e.amount,date:e.date,note:e.note,authorName:e.author_name,createdAt:e.created_at});
+ const asExpense=e=>({id:e.id,carId:e.car_id,amount:e.amount,date:e.date,note:e.note,version:e.version,authorName:e.author_name,createdAt:e.created_at});
  const handler=async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
@@ -78,6 +82,7 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
      const p=await body(req);const parsed=carInput.safeParse(p?.car);if(!parsed.success)throw fail(400,parsed.error.issues[0]?.message||'Перевір поля.');const clean={...parsed.data},now=new Date().toISOString();let id=p.id;
      db.exec('BEGIN IMMEDIATE');try{
       if(id){if(typeof id!=='string'||!Number.isInteger(p.version))throw fail(400,'Некоректна версія.');const row=db.prepare('SELECT * FROM cars WHERE id=?').get(id);if(!row||row.version!==p.version||JSON.parse(row.payload).deleted)throw fail(409,'Партнер уже оновив автомобіль. Закрий форму й відкрий її знову.');
+       if(user.role!=='owner'&&(JSON.parse(row.payload).photos||[]).some(photo=>!(clean.photos||[]).includes(photo)))throw fail(403,'Видаляти збережені фото може лише власник.');
        const changed=!sameProposal(JSON.parse(row.payload),clean);if(changed){clean.status='planned';const revision=approval(id).revision;db.prepare('INSERT INTO approval_state VALUES(?,?) ON CONFLICT(car_id) DO UPDATE SET revision=excluded.revision').run(id,revision+1);}else if(clean.status!=='planned'&&!approval(id).approved)throw fail(403,'Спочатку потрібні дві згоди: власника та партнера.');
        db.prepare('UPDATE cars SET payload=?,version=version+1,updated_at=?,updated_by=? WHERE id=?').run(JSON.stringify(clean),now,user.name,id);
       }else{id=randomUUID();clean.status='planned';clean.actual=null;db.prepare('INSERT INTO cars VALUES(?,1,?,?,?,?,?)').run(id,JSON.stringify(clean),now,now,user.name,user.id)}
@@ -98,6 +103,17 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
      if(user.role!=='owner')throw fail(403,'Керувати доступом може власник.');const p=await body(req);if(typeof p?.id!=='string'||typeof p.password!=='string'||p.password.length<12||p.password.length>128)throw fail(400,'Пароль має містити 12–128 символів.');
      const result=db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await passwordHash(p.password),p.id);if(!result.changes)throw fail(404,'Користувача не знайдено.');db.prepare('DELETE FROM sessions WHERE user_id=?').run(p.id);return json(res,200,{ok:true});
     }
+    if(path==='/api/expenses'&&req.method==='GET')return json(res,200,{entries:db.prepare("SELECT e.* FROM expense_entries e JOIN cars c ON c.id=e.car_id WHERE e.deleted_at IS NULL AND COALESCE(json_extract(c.payload,'$.deleted'),0)<>1 ORDER BY e.date DESC,e.created_at DESC,e.id").all().map(asExpense)});
+    if(path==='/api/expenses'&&req.method==='POST'){
+     const p=await body(req);const parsed=expenseInput.safeParse(p?.entry);if(!parsed.success)throw fail(400,'Перевір автомобіль, суму, дату та опис витрати.');const e=parsed.data;
+     db.exec('BEGIN IMMEDIATE');try{const car=db.prepare('SELECT * FROM cars WHERE id=?').get(e.carId);if(!car||JSON.parse(car.payload).deleted)throw fail(404,'Автомобіль не знайдено.');const existing=db.prepare('SELECT * FROM expense_entries WHERE id=?').get(e.id);
+      if(existing){if(existing.deleted_at||existing.car_id!==e.carId||existing.amount!==e.amount||existing.date!==e.date||existing.note!==e.note||existing.author_id!==user.id)throw fail(409,'Цей запис уже існує з іншими даними.');db.exec('COMMIT');return json(res,200,{entry:asExpense(existing)})}
+      if(!approval(e.carId).approved)throw fail(403,'Витрати можна вносити лише після двох згод за автомобілем.');db.prepare('INSERT INTO expense_entries(id,car_id,amount,date,note,author_id,author_name,created_at) VALUES(?,?,?,?,?,?,?,?)').run(e.id,e.carId,e.amount,e.date,e.note,user.id,user.name,new Date().toISOString());const saved=db.prepare('SELECT * FROM expense_entries WHERE id=?').get(e.id);db.exec('COMMIT');return json(res,200,{entry:asExpense(saved)});
+     }catch(e){db.exec('ROLLBACK');throw e}
+    }
+    if(path==='/api/expenses/delete'&&req.method==='POST'){
+     if(user.role!=='owner')throw fail(403,'Видаляти записи може лише власник.');const p=await body(req);if(typeof p?.id!=='string'||!Number.isInteger(p.version))throw fail(400,'Перевір запис і версію.');const result=db.prepare('UPDATE expense_entries SET deleted_at=?,deleted_by=?,version=version+1 WHERE id=? AND version=? AND deleted_at IS NULL').run(new Date().toISOString(),user.id,p.id,p.version);if(!result.changes)throw fail(409,'Витрату вже змінено або видалено.');return json(res,200,{ok:true});
+    }
     if(path==='/api/funding'&&req.method==='GET')return json(res,200,{entries:db.prepare('SELECT * FROM funding_entries ORDER BY date DESC,created_at DESC,id').all().map(asFunding)});
     if(path==='/api/funding'&&req.method==='POST'){
      if(user.role!=='owner')throw fail(403,'Операції фінансування вносить лише власник.');const p=await body(req);const parsed=fundingInput.safeParse(p?.entry);if(!parsed.success)throw fail(400,'Перевір тип операції, суму, дату й примітку.');const e=parsed.data;
@@ -105,7 +121,7 @@ export async function createApp({databasePath=process.env.DATABASE_PATH||join(ro
      if(row.kind!==e.kind||row.amount!==e.amount||row.date!==e.date||row.note!==e.note||row.author_id!==user.id)throw fail(409,'Ця операція вже існує з іншими даними.');return json(res,200,{entry:asFunding(row)});
     }
     if(path==='/api/backup'&&req.method==='GET'){
-     if(user.role!=='owner')throw fail(403,'Експорт доступний власнику.');res.setHeader('Content-Disposition','attachment; filename="auto-partners-backup.json"');return json(res,200,{approvalHistory:db.prepare('SELECT * FROM car_approvals ORDER BY created_at').all().map(e=>({...e,proposal:JSON.parse(e.proposal)})),funding:db.prepare('SELECT * FROM funding_entries ORDER BY date,created_at,id').all().map(asFunding),version:1,createdAt:new Date().toISOString(),cars:db.prepare('SELECT * FROM cars').all().map(asCar),messages:db.prepare('SELECT * FROM messages').all().map(asMessage)});
+     if(user.role!=='owner')throw fail(403,'Експорт доступний власнику.');res.setHeader('Content-Disposition','attachment; filename="auto-partners-backup.json"');return json(res,200,{expenses:db.prepare('SELECT * FROM expense_entries ORDER BY date,created_at,id').all().map(e=>({...asExpense(e),deletedAt:e.deleted_at,deletedBy:e.deleted_by})),approvalHistory:db.prepare('SELECT * FROM car_approvals ORDER BY created_at').all().map(e=>({...e,proposal:JSON.parse(e.proposal)})),funding:db.prepare('SELECT * FROM funding_entries ORDER BY date,created_at,id').all().map(asFunding),version:1,createdAt:new Date().toISOString(),cars:db.prepare('SELECT * FROM cars').all().map(asCar),messages:db.prepare('SELECT * FROM messages').all().map(asMessage)});
     }
     throw fail(404,'Не знайдено.');
    }
